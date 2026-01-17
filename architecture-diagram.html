@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Secure EKS Infrastructure - Architecture Diagram</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+
+        h1 {
+            color: #232F3E;
+        }
+
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .mermaid {
+            background-color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>AWS Secure EKS Infrastructure - Architecture Diagram</h1>
+        <p>This diagram shows how the secure EKS infrastructure works, including the DevSecOps pipeline, networking, and
+            security components.</p>
+
+        <div class="mermaid">
+            graph TB
+            subgraph "Developer Workflow"
+            DEV[Developer] -->|1. Commits Terraform Code| GIT[GitHub Repository]
+            end
+
+            subgraph "CI/CD Pipeline - GitHub Actions"
+            GIT -->|2. Triggers on PR/Push| WORKFLOW[terraform-security.yml]
+
+            WORKFLOW -->|3. Parallel Security Scans| SEC_JOB[Security Job]
+
+            SEC_JOB --> FMT[Terraform Format Check]
+            SEC_JOB --> VALIDATE[Terraform Validate]
+            SEC_JOB --> TFSEC[tfsec Scanner]
+            SEC_JOB --> CHECKOV[Checkov Policy Check]
+            SEC_JOB --> TRIVY[Trivy Vulnerability Scan]
+            SEC_JOB --> GITLEAKS[Gitleaks Secret Detection]
+            SEC_JOB --> INFRACOST[Infracost Analysis]
+
+            TFSEC -->|SARIF Report| GHSEC[GitHub Security Tab]
+            CHECKOV -->|SARIF Report| GHSEC
+            TRIVY -->|SARIF Report| GHSEC
+
+            SEC_JOB -->|4. All Checks Pass| PLAN_JOB[Terraform Plan Job]
+            PLAN_JOB -->|5. Connects via OIDC| AWS_CREDS[AWS Credentials]
+            PLAN_JOB -->|6. Reads State| S3_BACKEND[(S3 Backend<br />terraform-state)]
+            PLAN_JOB -->|7. State Locking| DYNAMO[(DynamoDB<br />state-lock)]
+            PLAN_JOB -->|8. Posts Results| PR[Pull Request Comment]
+            end
+
+            subgraph "Terraform Deployment - AWS us-east-1"
+            APPLY[Terraform Apply<br />After Approval] -->|9. Creates| VPC_MOD[VPC Module]
+            APPLY -->|10. Creates| IAM_ROLES[IAM Roles]
+            APPLY -->|11. Creates| EKS_CLUSTER[EKS Cluster]
+            APPLY -->|12. Creates| NODE_GROUP[EKS Node Group]
+
+            subgraph "VPC - 10.0.0.0/16"
+            VPC_MOD --> AZ1[Availability Zone 1a]
+            VPC_MOD --> AZ2[Availability Zone 1b]
+
+            AZ1 --> PRIV1[Private Subnet<br />10.0.1.0/24]
+            AZ1 --> PUB1[Public Subnet<br />10.0.101.0/24]
+
+            AZ2 --> PRIV2[Private Subnet<br />10.0.2.0/24]
+            AZ2 --> PUB2[Public Subnet<br />10.0.102.0/24]
+
+            PUB1 --> NAT[NAT Gateway]
+            PRIV1 -.->|Internet via| NAT
+            PRIV2 -.->|Internet via| NAT
+            end
+
+            subgraph "IAM Layer"
+            IAM_ROLES --> CLUSTER_ROLE[EKS Cluster Role<br />AmazonEKSClusterPolicy]
+            IAM_ROLES --> NODE_ROLE[EKS Node Role]
+            NODE_ROLE --> POLICY1[AmazonEKSWorkerNodePolicy]
+            NODE_ROLE --> POLICY2[AmazonEKS_CNI_Policy]
+            NODE_ROLE --> POLICY3[EC2ContainerRegistryReadOnly]
+            end
+
+            subgraph "EKS Control Plane"
+            EKS_CLUSTER -->|Uses| CLUSTER_ROLE
+            EKS_CLUSTER -->|Kubernetes 1.28| K8S_API[Kubernetes API Server]
+            EKS_CLUSTER -->|Encrypted etcd| ETCD[etcd Storage]
+            end
+
+            subgraph "Worker Nodes - Private Subnets"
+            NODE_GROUP -->|Uses| NODE_ROLE
+            NODE_GROUP -->|Deploys to| PRIV1
+            NODE_GROUP -->|Deploys to| PRIV2
+            NODE_GROUP --> NODE1[t3.medium Node 1]
+            NODE_GROUP --> NODE2[t3.medium Node 2]
+            NODE_GROUP -.->|Auto-scales 1-3| NODE3[t3.medium Node 3<br />optional]
+            end
+
+            K8S_API <-->|Manages| NODE1
+                K8S_API <-->|Manages| NODE2
+                    K8S_API <-->|Manages| NODE3
+                        end
+
+                        subgraph "Security & Monitoring"
+                        EKS_CLUSTER -->|Audit Logs| CLOUDWATCH[CloudWatch Logs]
+                        VPC_MOD -->|Flow Logs| CLOUDWATCH
+                        CLOUDWATCH -->|Monitoring| CLOUDTRAIL[CloudTrail]
+                        end
+
+                        subgraph "Application Deployment"
+                        KUBECTL[kubectl] -->|13. Deploy Workloads| K8S_API
+                        K8S_API -->|Schedules| NODE1
+                        K8S_API -->|Schedules| NODE2
+                        PUB1 -->|Load Balancer| APP[Application Services]
+                        PUB2 -->|Load Balancer| APP
+                        end
+
+                        style GIT fill:#f9f,stroke:#333,stroke-width:2px
+                        style SEC_JOB fill:#ff9,stroke:#333,stroke-width:2px
+                        style GHSEC fill:#f66,stroke:#333,stroke-width:2px
+                        style EKS_CLUSTER fill:#6cf,stroke:#333,stroke-width:3px
+                        style NODE_GROUP fill:#9f9,stroke:#333,stroke-width:2px
+                        style CLOUDWATCH fill:#fc6,stroke:#333,stroke-width:2px
+        </div>
+
+        <h2>Component Overview</h2>
+
+        <h3>1. Developer Workflow</h3>
+        <ul>
+            <li>Developers commit Terraform infrastructure code to GitHub</li>
+            <li>Changes trigger automated security pipeline</li>
+        </ul>
+
+        <h3>2. CI/CD Security Pipeline</h3>
+        <ul>
+            <li><strong>7 Automated Security Scans:</strong> tfsec, Checkov, Trivy, Gitleaks, Infracost</li>
+            <li><strong>SARIF Reports:</strong> Integration with GitHub Security Tab</li>
+            <li><strong>Terraform Plan:</strong> Preview infrastructure changes before deployment</li>
+        </ul>
+
+        <h3>3. VPC Architecture</h3>
+        <ul>
+            <li><strong>Multi-AZ Setup:</strong> High availability across 2 availability zones</li>
+            <li><strong>Network Segmentation:</strong> Public subnets for load balancers, private for worker nodes</li>
+            <li><strong>NAT Gateway:</strong> Secure internet access for private instances</li>
+        </ul>
+
+        <h3>4. IAM Security</h3>
+        <ul>
+            <li><strong>Least Privilege:</strong> Separate roles for cluster and worker nodes</li>
+            <li><strong>AWS Managed Policies:</strong> EKS, CNI, and ECR access</li>
+        </ul>
+
+        <h3>5. EKS Cluster</h3>
+        <ul>
+            <li><strong>Kubernetes 1.28:</strong> Managed control plane</li>
+            <li><strong>Encrypted Storage:</strong> etcd encryption at rest</li>
+            <li><strong>Auto-scaling:</strong> 1-3 worker nodes based on demand</li>
+        </ul>
+
+        <h3>6. Monitoring & Compliance</h3>
+        <ul>
+            <li><strong>CloudWatch:</strong> Centralized logging and metrics</li>
+            <li><strong>CloudTrail:</strong> Audit trail for compliance</li>
+            <li><strong>Flow Logs:</strong> Network traffic monitoring</li>
+        </ul>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+</body>
+
+</html>
