@@ -68,7 +68,7 @@ A production-ready, security-hardened AWS EKS cluster deployment using Infrastru
 
 ```bash
 
-git clone https://github.com/yourusername/aws-secure.git
+git clone https://github.com/mcbalds-org/aws-secure.git
 
 cd aws-secure
 
