@@ -1,0 +1,115 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      confirm_destroy:
+        description: 'Type "destroy" to confirm'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate-confirmation:
+    name: Validate Destroy Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_destroy }}" != "destroy" ]; then
+            echo "❌ Destroy cancelled: confirmation text must be 'destroy'"
+            echo "You entered: '${{ github.event.inputs.confirm_destroy }}'"
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    needs: validate-confirmation
+    environment:
+      name: ${{ github.event.inputs.environment }}-destroy
+      url: https://console.aws.amazon.com/
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Init
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          terraform init
+
+      - name: Terraform Plan Destroy
+        id: plan
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          terraform plan -destroy -out=destroy.tfplan
+
+      - name: Display Destroy Plan
+        run: |
+          echo "## Resources to be Destroyed 🗑️" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Environment: **${{ github.event.inputs.environment }}**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ WARNING" >> $GITHUB_STEP_SUMMARY
+          echo "This will permanently delete all infrastructure in the ${{ github.event.inputs.environment }} environment!" >> $GITHUB_STEP_SUMMARY
+
+      - name: Terraform Destroy
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          terraform apply -auto-approve destroy.tfplan
+
+      - name: Destroy Summary
+        if: success()
+        run: |
+          echo "## Destruction Complete! 💥" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Environment: **${{ github.event.inputs.environment }}**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All infrastructure resources have been destroyed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Resources Removed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ EKS Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Worker Nodes" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ VPC and Networking" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ NAT Gateway" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Security Groups" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ IAM Roles (EKS-specific)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** The GitHub OIDC IAM role and Terraform state backend (S3/DynamoDB) were NOT destroyed." >> $GITHUB_STEP_SUMMARY
+
+      - name: Destroy Failed
+        if: failure()
+        run: |
+          echo "## Destruction Failed ❌" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The destroy operation encountered an error. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "You may need to:" >> $GITHUB_STEP_SUMMARY
+          echo "- Check for resources that couldn't be deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- Manually delete stuck resources in the AWS Console" >> $GITHUB_STEP_SUMMARY
+          echo "- Re-run the destroy workflow" >> $GITHUB_STEP_SUMMARY
