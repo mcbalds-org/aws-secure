@@ -72,38 +72,117 @@ resource "aws_iam_role" "github_actions" {
   }
 }
 
-# Attach AdministratorAccess policy (adjust permissions based on your needs)
-# For production, you should create a custom policy with least privilege
-resource "aws_iam_role_policy_attachment" "github_actions_admin" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-}
+# Custom policy with least-privilege permissions for EKS deployment
+resource "aws_iam_role_policy" "github_actions_terraform" {
+  name = "terraform-eks-permissions"
+  role = aws_iam_role.github_actions.id
 
-# Alternatively, create a custom policy with specific permissions
-# Uncomment this and comment out the AdministratorAccess attachment above
-# resource "aws_iam_role_policy" "github_actions_terraform" {
-#   name = "terraform-permissions"
-#   role = aws_iam_role.github_actions.id
-#
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         Effect = "Allow"
-#         Action = [
-#           "ec2:*",
-#           "eks:*",
-#           "iam:*",
-#           "s3:*",
-#           "dynamodb:*",
-#           "logs:*",
-#           "kms:*"
-#         ]
-#         Resource = "*"
-#       }
-#     ]
-#   })
-# }
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EC2Permissions"
+        Effect = "Allow"
+        Action = [
+          "ec2:AllocateAddress",
+          "ec2:AssociateRouteTable",
+          "ec2:AttachInternetGateway",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:CreateInternetGateway",
+          "ec2:CreateNatGateway",
+          "ec2:CreateRoute",
+          "ec2:CreateRouteTable",
+          "ec2:CreateSecurityGroup",
+          "ec2:CreateSubnet",
+          "ec2:CreateTags",
+          "ec2:CreateVpc",
+          "ec2:DeleteInternetGateway",
+          "ec2:DeleteNatGateway",
+          "ec2:DeleteRoute",
+          "ec2:DeleteRouteTable",
+          "ec2:DeleteSecurityGroup",
+          "ec2:DeleteSubnet",
+          "ec2:DeleteTags",
+          "ec2:DeleteVpc",
+          "ec2:Describe*",
+          "ec2:DetachInternetGateway",
+          "ec2:DisassociateRouteTable",
+          "ec2:ModifySubnetAttribute",
+          "ec2:ModifyVpcAttribute",
+          "ec2:ReleaseAddress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "EKSPermissions"
+        Effect = "Allow"
+        Action = [
+          "eks:CreateCluster",
+          "eks:DeleteCluster",
+          "eks:DescribeCluster",
+          "eks:ListClusters",
+          "eks:UpdateClusterVersion",
+          "eks:UpdateClusterConfig",
+          "eks:TagResource",
+          "eks:UntagResource",
+          "eks:CreateNodegroup",
+          "eks:DeleteNodegroup",
+          "eks:DescribeNodegroup",
+          "eks:ListNodegroups",
+          "eks:UpdateNodegroupVersion",
+          "eks:UpdateNodegroupConfig"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "IAMPermissions"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:GetRole",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:PassRole",
+          "iam:TagRole",
+          "iam:UntagRole"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "TerraformStatePermissions"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::amcel-terraform-state-2025",
+          "arn:aws:s3:::amcel-terraform-state-2025/*"
+        ]
+      },
+      {
+        Sid    = "DynamoDBStateLockPermissions"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:DescribeTable"
+        ]
+        Resource = "arn:aws:dynamodb:us-east-1:*:table/terraform-state-lock"
+      }
+    ]
+  })
+}
 
 # Outputs
 output "oidc_provider_arn" {
