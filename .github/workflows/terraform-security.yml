@@ -172,21 +172,30 @@ jobs:
         with:
           script: |
             const output = `#### Terraform Plan 📋
-            
+
             <details><summary>Show Plan</summary>
-            
+
             \`\`\`
             ${{ steps.plan.outputs.stdout }}
             \`\`\`
-            
+
             </details>
-            
+
             *Plan Status: ${{ steps.plan.outcome }}*
             `;
-            
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: output
             });
+
+      - name: Notify ready for deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "✅ Security scans passed!"
+          echo "✅ Terraform plan completed successfully!"
+          echo ""
+          echo "📋 Ready to deploy! To deploy the infrastructure, run:"
+          echo "   gh workflow run terraform-deploy.yml"
