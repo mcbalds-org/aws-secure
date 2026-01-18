@@ -113,7 +113,7 @@ resource "aws_iam_role_policy_attachment" "eks_container_registry" {
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
   role_arn = aws_iam_role.eks_cluster.arn
-  version  = "1.28"
+  version  = "1.31"
 
   vpc_config {
     subnet_ids = concat(module.vpc.private_subnets, module.vpc.public_subnets)
