@@ -251,6 +251,4 @@ MIT License - see LICENSE file for details
 \- \[Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
 
 \- \[Kubernetes Security Best Practices](https://kubernetes.io/docs/concepts/security/)
-
-
-# Temporary test change
+\- \[Complete Deployment Guide](DEPLOYMENT.md)
